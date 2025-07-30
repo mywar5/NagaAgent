@@ -7,17 +7,17 @@
     "log_level": "DEBUG"
   },
   "api": {
-    "api_key": " ",
-    "base_url": " ",
-    "model": "TIG-3.6-VL-Lite",
-    "temperature": 0.7,
+    "api_key": "sk-271828",
+    "base_url": "http://38.246.237.129:8000",
+    "model": "gemini-2.5-pro",
+    "temperature": 0.5,
     "max_tokens": 2000,
     "max_history_rounds": 10
   },
   "api_server": {
     "enabled": true,
     "host": "127.0.0.1",
-    "port": 8000,
+    "port": 8001,
     "auto_start": true,
     "docs_enabled": true
   },
@@ -28,7 +28,7 @@
     "similarity_threshold": 0.6,
     "neo4j_uri": "neo4j://127.0.0.1:7687",
     "neo4j_user": "neo4j",
-    "neo4j_password": " ",
+    "neo4j_password": "sk-271828",
     "neo4j_database": "neo4j"
   },
   "handoff": {
@@ -57,7 +57,7 @@
     "keep_audio_files": false
   },
   "quick_model": {
-    "enabled": true,
+    "enabled": false,
     "api_key": " ",
     "base_url": "https://ark.cn-beijing.volces.com/api/v3",
     "model_name": "doubao-seed-1-6-flash-250615",

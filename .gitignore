@@ -33,6 +33,8 @@ models/
 .DS_Store
 Thumbs.db
 
+config copy.json
+
 # 临时文件
 *.tmp
 *.temp
