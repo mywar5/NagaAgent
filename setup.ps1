@@ -38,10 +38,11 @@ if (Test-Path "pyproject.toml") {
 } elseif (Test-Path "requirements.txt") {
     Write-Host "使用 requirements.txt 安装依赖..." -ForegroundColor Green
     pip install -r requirements.txt
-} else {
+} else {}
     Write-Host "未找到依赖文件，请检查项目配置" -ForegroundColor Red
     exit 1
 }
+
 
 # 兼容旧的 requirements 文件扫描（如果存在）
 Get-ChildItem -Filter "requirements*.txt" -ErrorAction SilentlyContinue | ForEach-Object {

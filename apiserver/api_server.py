@@ -105,11 +105,59 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ===============================================================
+# OpenAI兼容API模型
+# ===============================================================
+
+class OpenAIChatMessage(BaseModel):
+    role: str
+    content: str
+
+class OpenAIChatRequest(BaseModel):
+    model: str
+    messages: List[OpenAIChatMessage]
+    stream: bool = False
+    # 其他兼容性字段可以按需添加
+    # temperature: Optional[float] = None
+    # max_tokens: Optional[int] = None
+
+class OpenAIChatCompletionChoice(BaseModel):
+    index: int
+    message: OpenAIChatMessage
+    finish_reason: str = "stop"
+
+class OpenAIChatCompletion(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: List[OpenAIChatCompletionChoice]
+
+class OpenAIDelta(BaseModel):
+    content: Optional[str] = None
+
+class OpenAIChatCompletionChunkChoice(BaseModel):
+    index: int
+    delta: OpenAIDelta
+    finish_reason: Optional[str] = None
+
+class OpenAIChatCompletionChunk(BaseModel):
+    id: str
+    object: str = "chat.completion.chunk"
+    created: int
+    model: str
+    choices: List[OpenAIChatCompletionChunkChoice]
+
+
+# ===============================================================
+# 原始API模型
+# ===============================================================
+ 
 # 请求模型
 class ChatRequest(BaseModel):
-    message: str
-    stream: bool = False
-    session_id: Optional[str] = None
+   message: str
+   stream: bool = False
+   session_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -195,6 +243,98 @@ async def get_system_info():
         available_services=naga_agent.mcp.list_mcps(),
         api_key_configured=bool(config.api.api_key and config.api.api_key != "sk-placeholder-key-not-set")
     )
+
+# ===============================================================
+# OpenAI兼容API端点
+# ===============================================================
+
+@app.post("/v1/chat/completions")
+async def openai_chat_completions(request: OpenAIChatRequest):
+   """
+   OpenAI兼容的对话接口。
+   使得NagaAgent可以被任何兼容OpenAI API的客户端（如VS Code插件）无缝集成。
+   """
+   if not naga_agent:
+       raise HTTPException(status_code=503, detail="NagaAgent未初始化")
+
+   # 从请求中提取最后一条用户消息
+   user_message = ""
+   if request.messages and request.messages[-1].role == "user":
+       user_message = request.messages[-1].content
+   
+   if not user_message.strip():
+       raise HTTPException(status_code=400, detail="用户消息内容不能为空")
+
+   # 封装成内部请求
+   internal_request = ChatRequest(message=user_message, stream=request.stream)
+
+   # 根据是否流式传输调用不同的处理逻辑
+   if request.stream:
+       # 流式处理
+       async def stream_generator():
+           import time
+           import uuid
+           
+           # 创建一个异步生成器，用于从chat_stream获取数据
+           response_generator = chat_stream(internal_request)
+
+           async for chunk in response_generator.body_iterator:
+               # 解析原始数据块
+               if chunk.strip():
+                   # 构造OpenAI格式的流式块
+                   chunk_id = f"chatcmpl-{uuid.uuid4()}"
+                   created_time = int(time.time())
+                   
+                   # 移除 "data: " 前缀并处理特殊标记
+                   content_part = chunk.decode('utf-8').replace("data: ", "").strip()
+                   if content_part == "[DONE]":
+                        # 发送结束信号
+                       final_chunk = OpenAIChatCompletionChunk(
+                           id=chunk_id, model=request.model, created=created_time,
+                           choices=[OpenAIChatCompletionChunkChoice(index=0, delta=OpenAIDelta(), finish_reason="stop")]
+                       )
+                       yield f"data: {final_chunk.json()}\n\n"
+                       break
+                   
+                   # 包装成OpenAI流式响应
+                   openai_chunk = OpenAIChatCompletionChunk(
+                       id=chunk_id, model=request.model, created=created_time,
+                       choices=[OpenAIChatCompletionChunkChoice(index=0, delta=OpenAIDelta(content=content_part))]
+                   )
+                   yield f"data: {openai_chunk.json()}\n\n"
+           
+           # 确保流的末尾也有一个[DONE]标记
+           yield "data: [DONE]\n\n"
+
+       return StreamingResponse(stream_generator(), media_type="text/event-stream")
+   
+   else:
+       # 非流式处理
+       import time
+       import uuid
+       
+       response = await chat(internal_request)
+       
+       # 包装成OpenAI响应格式
+       completion_id = f"chatcmpl-{uuid.uuid4()}"
+       created_time = int(time.time())
+       
+       openai_response = OpenAIChatCompletion(
+           id=completion_id,
+           created=created_time,
+           model=request.model,
+           choices=[
+               OpenAIChatCompletionChoice(
+                   index=0,
+                   message=OpenAIChatMessage(role="assistant", content=response.response)
+               )
+           ]
+       )
+       return openai_response
+
+# ===============================================================
+# 原始API端点
+# ===============================================================
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
